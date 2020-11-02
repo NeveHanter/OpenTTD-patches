@@ -175,6 +175,8 @@ protected:
 	byte num_dataset;
 	byte num_on_x_axis;
 	byte num_vert_lines;
+	Point ruler;
+	Rect last_rect;
 	static const TextColour graph_axis_label_colour = TC_BLACK; ///< colour of the graph axis label.
 
 	/* The starting month and year that values are plotted against. If month is
@@ -283,7 +285,7 @@ protected:
 	 */
 	void DrawGraph(Rect r) const
 	{
-		uint x, y;               ///< Reused whenever x and y coordinates are needed.
+	    uint x, y;               ///< Reused whenever x and y coordinates are needed.
 		ValuesInterval interval; ///< Interval that contains all of the graph data.
 		int x_axis_offset;       ///< Distance from the top of the graph to the x axis.
 
@@ -342,6 +344,11 @@ protected:
 			GfxFillRect(r.left - 3, y, r.left - 1, y, GRAPH_AXIS_LINE_COLOUR);
 			GfxFillRect(r.left, y, r.right, y, grid_colour);
 			y -= y_sep;
+		}
+
+		if (ruler.x > r.left && ruler.x < r.right && ruler.y > r.top && ruler.y < r.bottom) {
+            GfxFillRect(r.left, ruler.y, r.right, ruler.y, GRAPH_AXIS_LINE_COLOUR);
+            GfxFillRect(ruler.x, r.top, ruler.x, r.bottom, GRAPH_AXIS_LINE_COLOUR);
 		}
 
 		/* Draw the y axis. */
@@ -531,7 +538,13 @@ public:
 		return INVALID_DATAPOINT;
 	}
 
-	void OnClick(Point pt, int widget, int click_count) override
+    void OnMouseOver(Point pt, int widget) override {
+        ruler = pt;
+
+        this->SetDirty();
+    }
+
+    void OnClick(Point pt, int widget, int click_count) override
 	{
 		/* Clicked on legend? */
 		if (widget == WID_CV_KEY_BUTTON) ShowGraphLegend();

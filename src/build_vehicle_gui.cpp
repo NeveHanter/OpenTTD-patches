@@ -38,6 +38,8 @@
 #include "table/strings.h"
 
 #include "safeguards.h"
+#include "stringfilter_type.h"
+#include "querystring_gui.h"
 
 /**
  * Get the height of a single 'entry' in the engine lists.
@@ -59,6 +61,9 @@ static const NWidgetPart _nested_build_vehicle_widgets[] = {
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_GREY),
 		NWidget(NWID_VERTICAL),
+		    NWidget(NWID_HORIZONTAL),
+                NWidget(WWT_EDITBOX, COLOUR_GREY, WID_BV_FILTER), SetResize(1, 0), SetFill(1, 0), SetDataTip(STR_LIST_FILTER_OSKTITLE, STR_LIST_FILTER_TOOLTIP),
+		    EndContainer(),
 			NWidget(NWID_HORIZONTAL),
 				NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WID_BV_SORT_ASCENDING_DESCENDING), SetDataTip(STR_BUTTON_SORT_BY, STR_TOOLTIP_SORT_ORDER),
 				NWidget(WWT_DROPDOWN, COLOUR_GREY, WID_BV_SORT_DROPDOWN), SetResize(1, 0), SetFill(1, 0), SetDataTip(STR_JUST_STRING, STR_TOOLTIP_SORT_CRITERIA),
@@ -938,17 +943,19 @@ int DrawVehiclePurchaseInfo(int left, int right, int y, EngineID engine_number, 
 	}
 
 	/* Draw details that apply to all types except rail wagons. */
-	if (e->type != VEH_TRAIN || e->u.rail.railveh_type != RAILVEH_WAGON) {
+	if (e->type == VEH_TRAIN) {
 		/* Design date - Life length */
 		SetDParam(0, ymd.year);
 		SetDParam(1, e->GetLifeLengthInDays() / DAYS_IN_LEAP_YEAR);
 		DrawString(left, right, y, STR_PURCHASE_INFO_DESIGNED_LIFE);
 		y += FONT_HEIGHT_NORMAL;
 
-		/* Reliability */
-		SetDParam(0, ToPercent16(e->reliability));
-		DrawString(left, right, y, STR_PURCHASE_INFO_RELIABILITY);
-		y += FONT_HEIGHT_NORMAL;
+		if (e->u.rail.railveh_type != RAILVEH_WAGON) {
+            /* Reliability */
+            SetDParam(0, ToPercent16(e->reliability));
+            DrawString(left, right, y, STR_PURCHASE_INFO_RELIABILITY);
+            y += FONT_HEIGHT_NORMAL;
+		}
 	}
 
 	if (refittable) y = ShowRefitOptionsList(left, right, y, engine_number);
@@ -1081,6 +1088,9 @@ struct BuildVehicleWindow : Window {
 	Train **virtual_train_out;                  ///< Virtual train ptr
 	TestedEngineDetails te;                     ///< Tested cost and capacity after refit.
 
+    StringFilter string_filter;                ///< Filter for vehicle name
+    QueryString vehiclename_editbox;           ///< Filter editbox
+
 	void SetBuyVehicleText()
 	{
 		NWidgetCore *widget = this->GetWidget<NWidgetCore>(WID_BV_BUILD);
@@ -1102,7 +1112,7 @@ struct BuildVehicleWindow : Window {
 		}
 	}
 
-	BuildVehicleWindow(WindowDesc *desc, TileIndex tile, VehicleType type, Train **virtual_train_out) : Window(desc)
+	BuildVehicleWindow(WindowDesc *desc, TileIndex tile, VehicleType type, Train **virtual_train_out) : Window(desc), vehiclename_editbox(MAX_LENGTH_VEHICLE_NAME_CHARS * MAX_CHAR_LENGTH, MAX_LENGTH_VEHICLE_NAME_CHARS)
 	{
 		this->vehicle_type = type;
 		this->window_number = tile == INVALID_TILE ? (int)type : tile;
@@ -1158,9 +1168,19 @@ struct BuildVehicleWindow : Window {
 		} else {
 			this->SelectEngine(INVALID_ENGINE);
 		}
+
+        this->querystrings[WID_BV_FILTER] = &this->vehiclename_editbox;
+        this->vehiclename_editbox.cancel_button = QueryString::ACTION_CLEAR;
 	}
 
-	/** Set the filter type according to the depot type */
+    void OnEditboxChanged(int widget) override {
+        if (widget == WID_BV_FILTER) {
+            this->string_filter.SetFilterTerm(this->vehiclename_editbox.text.buf);
+            this->InvalidateData();
+        }
+    }
+
+    /** Set the filter type according to the depot type */
 	void UpdateFilterByTile()
 	{
 		switch (this->vehicle_type) {
@@ -1315,6 +1335,19 @@ struct BuildVehicleWindow : Window {
 
 			/* Filter now! So num_engines and num_wagons is valid */
 			if (!FilterSingleEngine(eid)) continue;
+
+            if (!this->string_filter.IsEmpty()) {
+                SetDParam(0, eid);
+                char buffer[MAX_LENGTH_VEHICLE_NAME_CHARS];
+                GetString(buffer, STR_ENGINE_NAME, lastof(buffer));
+
+                this->string_filter.ResetState();
+                this->string_filter.AddLine(buffer);
+
+                if (!this->string_filter.GetState()) {
+                    continue;
+                }
+            }
 
 			this->eng_list.push_back(eid);
 
